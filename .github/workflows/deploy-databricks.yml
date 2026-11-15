@@ -1,0 +1,400 @@
+# =====================================================================================
+#  CI/CD Databricks · Superstore (basado en el YAML 3 del curso)
+#  Despliega SOLO la carpeta "proceso" de DEV a PROD, (re)crea el workflow
+#  WF_SUPERSTORE_ETL sobre el clúster existente de producción, lo ejecuta y lo monitorea.
+#  Secrets requeridos en el repo: DATABRICKS_ORIGIN_HOST, DATABRICKS_ORIGIN_TOKEN,
+#                                 DATABRICKS_DEST_HOST,  DATABRICKS_DEST_TOKEN
+# =====================================================================================
+name: Dynamic Databricks Notebook Deploy - Superstore
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'proceso/**'
+      - '.github/workflows/**'
+  workflow_dispatch:   # permite relanzar el despliegue manualmente desde la pestaña Actions
+
+env:
+  # Ruta del Git folder en el workspace DEV (origen de los notebooks)
+  NOTEBOOK_BASE: "/Workspace/Users/valencia_renzo@outlook.com/superstore-databricks-medallion/proceso"
+  # Ruta destino en el workspace PROD
+  DEST_BASE: "/Shared/superstore/proceso"
+  WORKFLOW_NAME: "WF_SUPERSTORE_ETL"
+  CLUSTER_NAME: "cluster_prod_superstore"
+  STORAGE_NAME: "adlssuperstorervc1"
+  ENV_DESTINO: "prod"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install jq & curl
+      run: sudo apt-get update && sudo apt-get install -y jq curl
+
+    - name: Export multiple notebooks (raw)
+      run: |
+        ORIGIN_HOST=${{ secrets.DATABRICKS_ORIGIN_HOST }}
+        ORIGIN_TOKEN=${{ secrets.DATABRICKS_ORIGIN_TOKEN }}
+        NOTEBOOKS=("1_Preparacion_Ambiente" "2_Ingest_Orders" "2_Ingest_Returns" "2_Ingest_People" "3_Transform" "4_Load" "5_Export_AzureSQL" "6_Grants")
+        mkdir -p notebooks_to_deploy
+        for nb in "${NOTEBOOKS[@]}"; do
+          echo "Exportando $nb en modo raw..."
+          curl -s -X GET \
+            -H "Authorization: Bearer $ORIGIN_TOKEN" \
+            "$ORIGIN_HOST/api/2.0/workspace/export?path=$NOTEBOOK_BASE/$nb&format=SOURCE&direct_download=true" \
+            --output "notebooks_to_deploy/$nb.py"
+          # Validación: si la ruta o el token están mal, la API devuelve un JSON de error en lugar del notebook
+          if ! head -n 1 "notebooks_to_deploy/$nb.py" | grep -q "Databricks notebook source"; then
+            echo "❌ Exportación inválida de $nb:"; cat "notebooks_to_deploy/$nb.py"; exit 1
+          fi
+        done
+        ls -la notebooks_to_deploy
+
+    - name: Deploy notebooks to Destination Workspace
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        echo "Creando carpeta $DEST_BASE si no existe..."
+        curl -s -X POST \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"path\":\"$DEST_BASE\"}" \
+          "$DEST_HOST/api/2.0/workspace/mkdirs"
+        for file in notebooks_to_deploy/*.py; do
+          name=$(basename "$file" .py)
+          dest_path="$DEST_BASE/$name"
+          echo "Importando $file → $dest_path"
+          response=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEST_TOKEN" \
+            -H "Content-Type: multipart/form-data" \
+            -F "path=$dest_path" \
+            -F "format=SOURCE" \
+            -F "language=PYTHON" \
+            -F "overwrite=true" \
+            -F "content=@$file" \
+            "$DEST_HOST/api/2.0/workspace/import")
+          echo "Response: $response"
+          if echo "$response" | grep -q "error_code"; then exit 1; fi
+        done
+
+    - name: Check if workflow exists and delete if necessary
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        echo "Verificando si existe el workflow: $WORKFLOW_NAME"
+        workflows_response=$(curl -s -X GET \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          "$DEST_HOST/api/2.1/jobs/list?name=$WORKFLOW_NAME")
+        existing_job_ids=$(echo "$workflows_response" | jq -r --arg name "$WORKFLOW_NAME" '.jobs[]? | select(.settings.name == $name) | .job_id')
+        if [ -n "$existing_job_ids" ]; then
+          for job_id in $existing_job_ids; do
+            echo "Workflow encontrado con ID: $job_id. Eliminando..."
+            curl -s -X POST \
+              -H "Authorization: Bearer $DEST_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"job_id\": $job_id}" \
+              "$DEST_HOST/api/2.1/jobs/delete"
+          done
+        else
+          echo "No se encontró workflow existente con nombre: $WORKFLOW_NAME"
+        fi
+
+    - name: Get existing cluster ID
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        echo "Buscando cluster existente: $CLUSTER_NAME"
+        clusters_response=$(curl -s -X GET \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          "$DEST_HOST/api/2.0/clusters/list")
+        cluster_id=$(echo "$clusters_response" | jq -r --arg name "$CLUSTER_NAME" '.clusters[]? | select(.cluster_name == $name) | .cluster_id' | head -n 1)
+        if [ -n "$cluster_id" ] && [ "$cluster_id" != "null" ]; then
+          echo "✅ Cluster encontrado: $CLUSTER_NAME con ID: $cluster_id"
+          echo "CLUSTER_ID=$cluster_id" >> $GITHUB_ENV
+        else
+          echo "❌ No se encontró el cluster: $CLUSTER_NAME"
+          echo "Clusters disponibles:"
+          echo "$clusters_response" | jq -r '.clusters[]? | .cluster_name'
+          exit 1
+        fi
+
+    - name: Create Databricks Workflow WF_SUPERSTORE_ETL
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        echo "Creando workflow: $WORKFLOW_NAME con cluster existente ID: $CLUSTER_ID"
+
+        # Diseño (DAG): Preparacion_Ambiente -> 3 ingestas en paralelo -> Transform -> Load -> Export_AzureSQL -> Grants
+        cat > workflow_config.json << EOF
+        {
+          "name": "$WORKFLOW_NAME",
+          "format": "MULTI_TASK",
+          "tasks": [
+            {
+              "task_key": "Preparacion_Ambiente",
+              "description": "Crea external locations, catalogo, esquemas y tablas",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/1_Preparacion_Ambiente",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "storageName": "$STORAGE_NAME",
+                  "reset": "false"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1
+            },
+            {
+              "task_key": "Ingest_Orders",
+              "description": "Raw (CSV) -> bronze.orders",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/2_Ingest_Orders",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "storageName": "$STORAGE_NAME",
+                  "container": "raw",
+                  "run_id": "{{job.run_id}}"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [ { "task_key": "Preparacion_Ambiente" } ]
+            },
+            {
+              "task_key": "Ingest_Returns",
+              "description": "Raw (JSON) -> bronze.returns",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/2_Ingest_Returns",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "storageName": "$STORAGE_NAME",
+                  "container": "raw",
+                  "run_id": "{{job.run_id}}"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [ { "task_key": "Preparacion_Ambiente" } ]
+            },
+            {
+              "task_key": "Ingest_People",
+              "description": "Raw (Parquet) -> bronze.people",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/2_Ingest_People",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "storageName": "$STORAGE_NAME",
+                  "container": "raw",
+                  "run_id": "{{job.run_id}}"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [ { "task_key": "Preparacion_Ambiente" } ]
+            },
+            {
+              "task_key": "Transform",
+              "description": "Bronze -> Silver",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/3_Transform",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "run_id": "{{job.run_id}}"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [
+                { "task_key": "Ingest_Orders" },
+                { "task_key": "Ingest_Returns" },
+                { "task_key": "Ingest_People" }
+              ]
+            },
+            {
+              "task_key": "Load",
+              "description": "Silver -> Golden",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/4_Load",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "run_id": "{{job.run_id}}"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [ { "task_key": "Transform" } ]
+            },
+            {
+              "task_key": "Export_AzureSQL",
+              "description": "Golden -> Azure SQL Database (credenciales en Key Vault)",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/5_Export_AzureSQL",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO",
+                  "secretScope": "kv-superstore",
+                  "run_id": "{{job.run_id}}"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [ { "task_key": "Load" } ]
+            },
+            {
+              "task_key": "Grants",
+              "description": "Permisos a usuarios y grupos",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/6_Grants",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "env": "$ENV_DESTINO"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 1,
+              "depends_on": [ { "task_key": "Export_AzureSQL" } ]
+            }
+          ],
+          "schedule": {
+            "quartz_cron_expression": "0 0 7 * * ?",
+            "timezone_id": "America/Lima",
+            "pause_status": "PAUSED"
+          },
+          "email_notifications": {
+            "on_failure": [],
+            "on_success": [],
+            "no_alert_for_skipped_runs": false
+          },
+          "webhook_notifications": {},
+          "timeout_seconds": 7200,
+          "max_concurrent_runs": 1,
+          "tags": {
+            "environment": "production",
+            "created_by": "github_actions",
+            "project": "superstore_medallion",
+            "cluster_used": "$CLUSTER_NAME"
+          }
+        }
+        EOF
+
+        create_response=$(curl -s -X POST \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d @workflow_config.json \
+          "$DEST_HOST/api/2.1/jobs/create")
+        echo "Workflow creation response: $create_response"
+        job_id=$(echo "$create_response" | jq -r '.job_id')
+        if [ -n "$job_id" ] && [ "$job_id" != "null" ]; then
+          echo "✅ Workflow '$WORKFLOW_NAME' creado exitosamente con ID: $job_id"
+          echo "WORKFLOW_JOB_ID=$job_id" >> $GITHUB_ENV
+        else
+          echo "❌ Error al crear el workflow"
+          exit 1
+        fi
+
+    - name: Validate Workflow Configuration
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        job_details=$(curl -s -X GET \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          "$DEST_HOST/api/2.1/jobs/get?job_id=$WORKFLOW_JOB_ID")
+        echo "📋 Resumen del workflow:"
+        echo "Nombre: $(echo "$job_details" | jq -r '.settings.name')"
+        echo "Número de tareas: $(echo "$job_details" | jq '.settings.tasks | length')"
+        echo "📝 Tareas configuradas:"
+        echo "$job_details" | jq -r '.settings.tasks[] | "- " + .task_key + " → " + .notebook_task.notebook_path + "  (depende de: " + ([.depends_on[]?.task_key] | join(", ")) + ")"'
+        echo "🖥️  Cluster: $CLUSTER_NAME ($CLUSTER_ID)"
+
+    - name: Execute Workflow WF_SUPERSTORE_ETL
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        echo "🚀 Ejecutando workflow: $WORKFLOW_NAME ($WORKFLOW_JOB_ID)"
+        run_response=$(curl -s -X POST \
+          -H "Authorization: Bearer $DEST_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"job_id\": $WORKFLOW_JOB_ID}" \
+          "$DEST_HOST/api/2.1/jobs/run-now")
+        run_id=$(echo "$run_response" | jq -r '.run_id')
+        if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+          echo "🎯 Workflow ejecutado. Run ID: $run_id"
+          echo "WORKFLOW_RUN_ID=$run_id" >> $GITHUB_ENV
+          echo "🔗 URL: $DEST_HOST/jobs/$WORKFLOW_JOB_ID/runs/$run_id"
+        else
+          echo "❌ Error al ejecutar el workflow: $run_response"
+          exit 1
+        fi
+
+    - name: Monitor Workflow Execution
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        # Hasta 30 min: incluye el arranque del clúster si estaba apagado
+        max_wait_time=1800
+        wait_time=0
+        check_interval=30
+        while [ $wait_time -lt $max_wait_time ]; do
+          run_status=$(curl -s -X GET \
+            -H "Authorization: Bearer $DEST_TOKEN" \
+            "$DEST_HOST/api/2.1/jobs/runs/get?run_id=$WORKFLOW_RUN_ID")
+          state=$(echo "$run_status" | jq -r '.state.life_cycle_state')
+          result_state=$(echo "$run_status" | jq -r '.state.result_state // "RUNNING"')
+          echo "⏱️  Estado: $state ($result_state) - ${wait_time}s"
+          echo "$run_status" | jq -r '.tasks[]? | "  📋 " + .task_key + ": " + .state.life_cycle_state + " (" + (.state.result_state // "RUNNING") + ")"'
+          case "$state" in
+            "TERMINATED")
+              if [ "$result_state" = "SUCCESS" ]; then
+                echo "🎉 ¡Workflow completado exitosamente!"
+                start_time=$(echo "$run_status" | jq -r '.start_time')
+                end_time=$(echo "$run_status" | jq -r '.end_time')
+                echo "⏰ Duración total: $(( (end_time - start_time) / 1000 )) segundos"
+                exit 0
+              else
+                echo "❌ Workflow terminó con errores: $result_state"
+                echo "$run_status" | jq -r '.tasks[]? | "  " + .task_key + ": " + (.state.result_state // "UNKNOWN") + " " + (.state.state_message // "")'
+                exit 1
+              fi
+              ;;
+            "INTERNAL_ERROR"|"SKIPPED")
+              echo "❌ Workflow falló con estado: $state"
+              exit 1
+              ;;
+          esac
+          sleep $check_interval
+          wait_time=$((wait_time + check_interval))
+        done
+        echo "⚠️  Timeout de monitoreo; el workflow sigue en Databricks: $DEST_HOST/jobs/$WORKFLOW_JOB_ID/runs/$WORKFLOW_RUN_ID"
+        exit 0
+
+    - name: Clean up
+      if: always()
+      run: |
+        rm -rf notebooks_to_deploy
+        rm -f workflow_config.json
+
+    - name: Done
+      run: |
+        echo "🎉 ¡Despliegue y ejecución completados!"
+        echo "✅ Notebooks desplegados en $DEST_BASE (solo carpeta proceso)"
+        echo "✅ Workflow: $WORKFLOW_NAME ($WORKFLOW_JOB_ID) sobre $CLUSTER_NAME"
+        echo "✅ DAG: Preparacion_Ambiente → [Ingest_Orders | Ingest_Returns | Ingest_People] → Transform → Load → Export_AzureSQL → Grants"
