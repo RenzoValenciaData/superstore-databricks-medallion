@@ -9,7 +9,7 @@ ETL en **PySpark** sobre **Azure Databricks + Unity Catalog** con arquitectura *
 
 ## 1. Resumen ejecutivo
 
-> **Mensaje clave.** Con un pipeline reproducible y gobernado, convertimos 9,994 líneas de venta en 4 marts de negocio. Con ellos se puede ver **dónde se pierde margen**: subcategorías deficitarias, descuentos altos y devoluciones. Todo se despliega a producción sin intervención manual.
+> **Mensaje clave.** El negocio crece (+29.5 % en 2020 y +20.4 % en 2021), pero **los descuentos mayores al 20 % destruyen US$135 mil de utilidad**. Esa pérdida equivale al 47 % de la utilidad total del período. Un pipeline reproducible y gobernado convierte 9,994 líneas de venta en 4 marts que hacen visible esa fuga de margen, y se despliega a producción sin intervención manual.
 
 | | |
 |---|---|
@@ -19,9 +19,19 @@ ETL en **PySpark** sobre **Azure Databricks + Unity Catalog** con arquitectura *
 
 **KPIs del pipeline** *(última ejecución en producción)*
 
-| Ventas totales | Utilidad | Margen | Filas Bronze → Silver | Rechazadas por calidad | Duración workflow |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| `TODO` | `TODO` | `TODO` | `TODO` | `TODO` | `TODO` |
+| Ventas 2018–2021 | Utilidad | Margen | Órdenes | Tasa de devolución | Filas Bronze → Silver | Rechazadas por calidad |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **US$2.30 M** | **US$286.4 mil** | **12.5 %** | **5,009** | **5.9 %** | **9,994 → 9,994** | **0** |
+
+**Hallazgos que habilitan los marts Golden**
+
+| # | Hallazgo | Evidencia (golden) |
+|---|---|---|
+| 1 | Los descuentos de 21–40 % pierden US$35.8 mil y los mayores al 40 % pierden US$99.6 mil. Las ventas sin descuento generan US$321 mil de utilidad. | `silver.ventas_detalle.banda_descuento` |
+| 2 | Tres subcategorías son deficitarias: **Tables** (−US$17.7 mil), **Bookcases** (−US$3.5 mil) y **Supplies** (−US$1.2 mil). | `golden.rentabilidad_subcategoria` |
+| 3 | **Central** tiene el menor margen (7.9 %), frente al 14.9 % de **West**. | `golden.kpi_mensual` |
+| 4 | Las ventas crecen 20 % en 2021, pero el margen cae de 13.4 % a 12.7 %. | `golden.kpi_mensual` (YoY) |
+| 5 | 395 de 793 clientes (50 %) explican el 80 % de las ventas (clase A). | `golden.clientes_pareto` |
 
 ---
 
@@ -144,7 +154,9 @@ Todas las tablas se crean en **Preparación de Ambiente**. El ETL **solo escribe
 - **Cuadre Silver = Golden:** si las ventas no cuadran, la tarea `Load` falla y el workflow se detiene.
 - **Bitácora:** cada tabla cargada registra filas leídas, escritas y rechazadas en `control.auditoria_etl` con el `run_id` del job.
 
-`TODO: captura de control.auditoria_etl y de control.rechazados`
+![Auditoría del ETL](evidencias/16_auditoria.png)
+
+![Linaje Unity Catalog](evidencias/15_linaje.png)
 
 ---
 
@@ -159,7 +171,7 @@ Todas las tablas se crean en **Preparación de Ambiente**. El ETL **solo escribe
 
 Usuarios y grupos ficticios creados en la Account Console y asignados a ambos workspaces. Script: `seguridad/01_Grants_Usuarios_Grupos.sql`. Se aplican automáticamente en la última tarea del workflow (`proceso/6_Grants`).
 
-`TODO: captura SHOW GRANTS`
+![SHOW GRANTS en prod](evidencias/24_grants_prod.png)
 
 ---
 
@@ -174,13 +186,25 @@ Usuarios y grupos ficticios creados en la Account Console y asignados a ambos wo
    - lo ejecuta con `env=prod` y lo monitorea hasta terminar.
 4. Secrets del repositorio: `DATABRICKS_ORIGIN_HOST`, `DATABRICKS_ORIGIN_TOKEN`, `DATABRICKS_DEST_HOST`, `DATABRICKS_DEST_TOKEN`.
 
-`TODO: captura de GitHub Actions en verde + workflow ejecutado en prod`
+![GitHub Actions](evidencias/20_github_actions.png)
+
+![Workflow en prod](evidencias/22_workflow_prod.png)
 
 ---
 
 ## 11. Visualización
 
-`TODO: capturas del AI/BI Dashboard, Genie y Power BI`
+| Herramienta | Fuente | Qué responde |
+|---|---|---|
+| **AI/BI Dashboard** (Databricks) | `superstore_prod` vía SQL Warehouse serverless | Tendencia, márgenes por región y subcategoría, impacto del descuento, clientes ABC, envíos |
+| **Genie** | 4 tablas golden + `silver.ventas_detalle` | Preguntas de negocio en lenguaje natural (ver [instrucciones](dashboard/02_genie_instrucciones.md)) |
+| **Power BI** | Azure SQL Database (tablas golden exportadas por el ETL) | Reporte financiero para usuarios fuera de Databricks |
+
+![AI/BI Dashboard](dashboard/superstore_ejecutivo.png)
+
+![Genie](dashboard/genie_superstore.png)
+
+![Power BI](dashboard/superstore_finanzas.png)
 
 ---
 
@@ -188,7 +212,7 @@ Usuarios y grupos ficticios creados en la Account Console y asignados a ambos wo
 
 Share `share_superstore_golden` (tablas `kpi_mensual` y `rentabilidad_subcategoria`, con historial) para el destinatario `rcp_socio_comercial` (open sharing). Ver `delta-sharing/01_Delta_Sharing.py`.
 
-`TODO: captura`
+![Delta Sharing](evidencias/27_delta_sharing.png)
 
 ---
 
@@ -203,13 +227,48 @@ Si un pase a producción falla, se ejecuta en orden:
 
 ## 14. Evidencias
 
-`TODO: índice de capturas`
+| # | Captura | Qué demuestra |
+|---|---|---|
+| 00 | [Arquitectura](evidencias/00_arquitectura.png) | Diagrama de la solución |
+| 01 | [Contenedores ADLS](evidencias/01_adls_contenedores.png) | `raw`, `bronze`, `silver`, `golden`, `metastore` en ADLS Gen2 |
+| 02 | [IAM del Access Connector](evidencias/02_IAM_access_connector.png) | Managed Identity con *Storage Blob Data Contributor* |
+| 03 | [Resource group](evidencias/03_resource_group.png) | Servicios aprovisionados en East US 2 |
+| 04 | [Storage credential](evidencias/04_storage_credential.png) | `cred_superstore_mi` (Azure Managed Identity) |
+| 05 | [Usuarios y grupos](evidencias/05_usuarios_grupos.png) | 3 grupos de cuenta con sus miembros |
+| 06 | [Permisos dev](evidencias/06_workspace_permissions_dev.png) · [Permisos prod](evidencias/06_workspace_permissions_prd.png) | Grupos y usuario asignados a ambos workspaces |
+| 07 | [Datasets en raw](evidencias/07_raw_datasets.png) | `raw/superstore/{orders,returns,people}` |
+| 08 | [Git folder en dev](evidencias/08_git_folder_dev.png) | Repo clonado en la rama `construccion` |
+| 09 | [Metastore y OpenSharing](evidencias/09_metastore_opensharing.png) | Metastore compartido y Delta Sharing externo habilitado |
+| 10 | [Preparación de ambiente](evidencias/10_prepamb_dev.png) | External locations, catálogo, esquemas y tablas |
+| 11 | [Bronze](evidencias/11_bronze_dev.png) | 9,994 órdenes ingeridas, 0 rechazadas |
+| 12 | [Silver](evidencias/12_silver_dev.png) | `ventas_detalle`, `dim_cliente`, `dim_producto` |
+| 13 | [Golden + cuadre](evidencias/13_golden_dev.png) | Ventas silver = golden (US$2,297,201) |
+| 14 | [Catálogo dev](evidencias/14_catalogo_dev.png) | `superstore_dev` con sus esquemas |
+| 15 | [Linaje](evidencias/15_linaje.png) | Linaje automático de Unity Catalog silver → golden |
+| 16 | [Auditoría](evidencias/16_auditoria.png) | `control.auditoria_etl` por ejecución |
+| 17 | [Clúster prod](evidencias/17_cluster_prod.png) | `cluster_prod_superstore`: single node, Dedicated, Unity Catalog |
+| 18 | [Secrets GitHub](evidencias/18_github_secrets.png) | Los 4 secrets del pipeline (solo los nombres) |
+| 19 | [Pull Request](evidencias/19_pull_request.png) | Merge `construccion → main` que dispara el despliegue |
+| 20 | [GitHub Actions](evidencias/20_github_actions.png) | Pipeline CI/CD en verde |
+| 21 | [Notebooks en prod](evidencias/21_notebooks_prod.png) | `/Shared/superstore/proceso` desplegado |
+| 22 | [Workflow prod](evidencias/22_workflow_prod.png) | `WF_SUPERSTORE_ETL`: 8 tareas en verde sobre el clúster prod |
+| 23 | [Catálogo prod](evidencias/23_catalogo_prod.png) | `superstore_prod` con datos |
+| 24 | [Grants prod](evidencias/24_grants_prod.png) | Permisos aplicados por la tarea `Grants` |
+| 25 | [Key Vault](evidencias/25_key_vault.png) | Secretos de conexión a Azure SQL (sin valores) |
+| 26 | [Azure SQL](evidencias/26_azure_sql.png) | Tablas golden exportadas a `dbo` |
+| 27 | [Delta Sharing](evidencias/27_delta_sharing.png) | Share y destinatario abierto |
 
 ---
 
 ## 15. Certificaciones
 
-`TODO`
+| Acreditación (Databricks Academy) | Evidencia |
+|---|---|
+| Databricks Fundamentals | `TODO` |
+| Generative AI Fundamentals | `TODO` |
+| Data Governance Fundamentals | `TODO` |
+
+Capturas y enlaces de verificación en [`certificaciones/`](certificaciones/).
 
 ---
 
