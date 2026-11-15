@@ -56,13 +56,20 @@ def auditar(proceso, tabla, leidas, escritas, rechazadas=0, estado="OK"):
 
 
 def cachear(df):
-    """cache/persist en clúster clásico (prod). En serverless (dev) no está soportado: se continúa sin cache."""
-    try:
-        df = df.persist()
-        print("DataFrame persistido en memoria")
-    except Exception as e:
-        print(f"(info) persist no disponible en este cómputo: {type(e).__name__}")
+    """persist solo en el clúster clásico de prod.
+    En dev se usa cómputo serverless, que no soporta cache/persist (puede invalidar la sesión): se omite."""
+    if env != "prod":
+        print("(info) dev/serverless: se omite persist")
+        return df
+    df = df.persist()
+    print("DataFrame persistido en memoria (clúster clásico)")
     return df
+
+
+def liberar(df):
+    """unpersist solo donde se hizo persist (prod)."""
+    if env == "prod":
+        df.unpersist()
 
 # COMMAND ----------
 
@@ -280,10 +287,7 @@ for tabla in (t_ventas, t_cliente, t_producto):
     auditar("3_Transform", tabla, filas_bronze, escritas, duplicados if tabla == t_ventas else 0)
     print(f"✔ {tabla}: {escritas} filas")
 
-try:
-    ventas_detalle.unpersist()
-except Exception:
-    pass
+liberar(ventas_detalle)
 
 # COMMAND ----------
 
