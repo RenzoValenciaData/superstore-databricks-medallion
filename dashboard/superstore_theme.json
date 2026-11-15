@@ -1,0 +1,19 @@
+{
+  "name": "Superstore - Renzo Valencia",
+  "dataColors": ["#006450", "#CC0000", "#1E2A32", "#4F8F7F", "#E06666", "#6B7780", "#9CC5B9", "#F2B8B8"],
+  "background": "#FFFFFF",
+  "foreground": "#1E2A32",
+  "tableAccent": "#006450",
+  "good": "#006450",
+  "bad": "#CC0000",
+  "neutral": "#6B7780",
+  "maximum": "#006450",
+  "center": "#FFFFFF",
+  "minimum": "#CC0000",
+  "textClasses": {
+    "title": { "fontFace": "Georgia", "fontSize": 14, "color": "#1E2A32" },
+    "header": { "fontFace": "Georgia", "fontSize": 12, "color": "#1E2A32" },
+    "label": { "fontFace": "Arial", "fontSize": 10, "color": "#1E2A32" },
+    "callout": { "fontFace": "Georgia", "fontSize": 26, "color": "#006450" }
+  }
+}
