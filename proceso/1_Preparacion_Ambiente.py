@@ -287,4 +287,6 @@ for esquema in esquemas:
     tablas = [r["tableName"] for r in spark.sql(f"SHOW TABLES IN {catalogo}.{esquema}").collect()]
     print(f"{catalogo}.{esquema}: {tablas}")
 
+# COMMAND ----------
+
 dbutils.notebook.exit(f"OK - ambiente {env} preparado en {catalogo}")

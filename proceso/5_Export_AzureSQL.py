@@ -103,4 +103,6 @@ df_check = (spark.read.format("jdbc")
 print(f"dbo.kpi_mensual en Azure SQL: {df_check.count()} filas")
 display(df_check.limit(10))
 
+# COMMAND ----------
+
 dbutils.notebook.exit("OK export Azure SQL")

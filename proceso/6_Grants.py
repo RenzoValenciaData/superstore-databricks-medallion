@@ -84,4 +84,6 @@ display(spark.sql(f"SHOW GRANTS ON TABLE {catalogo}.golden.kpi_mensual"))
 if errores:
     raise Exception(f"{len(errores)} grants fallaron (¿grupos/usuarios creados y asignados al workspace?): {errores}")
 
+# COMMAND ----------
+
 dbutils.notebook.exit(f"OK grants: {len(grants)} sentencias aplicadas en {catalogo}")

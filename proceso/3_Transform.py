@@ -294,4 +294,6 @@ liberar(ventas_detalle)
 display(spark.table(t_ventas).groupBy("anio").agg(F.round(F.sum("ventas"), 2).alias("ventas"),
                                                   F.round(F.sum("utilidad"), 2).alias("utilidad")).orderBy("anio"))
 
+# COMMAND ----------
+
 dbutils.notebook.exit("OK silver")

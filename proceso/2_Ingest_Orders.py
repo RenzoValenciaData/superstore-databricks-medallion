@@ -214,4 +214,6 @@ auditar("2_Ingest_Orders", tabla_destino, leidas, escritas, rechazadas)
 print(f"Leídas: {leidas} | Escritas en bronze: {escritas} | Rechazadas: {rechazadas}")
 display(df_rechazados.groupBy("motivo_rechazo").count())
 
+# COMMAND ----------
+
 dbutils.notebook.exit(f"OK orders: {escritas} filas ({rechazadas} rechazadas)")

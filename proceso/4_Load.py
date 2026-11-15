@@ -197,4 +197,7 @@ print(f"Ventas silver: {v_silver:,.0f} | Ventas golden: {v_golden:,.0f}")
 assert abs(v_silver - v_golden) <= 5, "Descuadre entre Silver y Golden (tolerancia de redondeo: 5)"
 
 display(spark.table(f"{catalogo}.golden.kpi_mensual").orderBy("anio_mes", "region", "categoria").limit(20))
+
+# COMMAND ----------
+
 dbutils.notebook.exit("OK golden")

@@ -119,4 +119,7 @@ escritas = spark.table(tabla_destino).count()
 auditar("2_Ingest_People", tabla_destino, leidas, escritas, leidas - escritas)
 
 print(f"Leídas: {leidas} | Escritas: {escritas}")
+
+# COMMAND ----------
+
 dbutils.notebook.exit(f"OK people: {escritas} filas")
