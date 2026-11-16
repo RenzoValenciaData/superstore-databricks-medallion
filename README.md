@@ -48,6 +48,15 @@ ETL en **PySpark** sobre **Azure Databricks + Unity Catalog** con arquitectura *
 
 **Aislamiento dev / prod:** ambos workspaces comparten el metastore de East US 2 y el Data Lake. Cada ambiente escribe en su **propio catálogo** (`superstore_dev` / `superstore_prod`) y en su **propio prefijo físico** (`/dev/…`, `/prod/…`). Solo hay **un clúster encendido**, el de producción; en dev se usa serverless.
 
+**Decisiones tomadas por restricciones del entorno (suscripción Free Trial):**
+
+| Restricción encontrada | Decisión |
+|---|---|
+| Cuota de 4 vCPU por región | Clúster prod *single node* de 4 núcleos; desarrollo en cómputo **serverless** |
+| `Standard_DS3_v2` sin capacidad en East US 2 (`CLOUD_PROVIDER_RESOURCE_STOCKOUT`) | Clúster prod en **`Standard_D4ds_v5`** (4 núcleos, 16 GB) |
+| La suscripción no puede crear servidores SQL en East US 2 | **Azure SQL Database** en **Central US**, con la oferta gratuita (serverless con *auto-pause*) |
+| El cómputo serverless no soporta *persist* ni la fuente JDBC | `persist` solo en prod; la exportación a Azure SQL corre solo en el workflow productivo. Si no existe el secret scope, la tarea termina en *SKIPPED* sin romper el flujo. |
+
 ---
 
 ## 3. Servicios utilizados
@@ -196,7 +205,7 @@ Usuarios y grupos ficticios creados en la Account Console y asignados a ambos wo
 
 | Herramienta | Fuente | Qué responde |
 |---|---|---|
-| **AI/BI Dashboard** (Databricks) | `superstore_prod` vía SQL Warehouse serverless | Tendencia, márgenes por región y subcategoría, impacto del descuento, clientes ABC, envíos |
+| **AI/BI Dashboard** (Databricks) | `superstore_prod` vía SQL Warehouse serverless | KPIs, tendencia mensual y anual, margen por región, utilidad por subcategoría, impacto del descuento y clientes ABC |
 | **Genie** | 4 tablas golden + `silver.ventas_detalle` | Preguntas de negocio en lenguaje natural (ver [instrucciones](dashboard/02_genie_instrucciones.md)) |
 | **Power BI** | Azure SQL Database (tablas golden exportadas por el ETL) | Reporte financiero para usuarios fuera de Databricks |
 
@@ -208,11 +217,13 @@ Usuarios y grupos ficticios creados en la Account Console y asignados a ambos wo
 
 ---
 
-## 12. Delta Sharing
+## 12. Delta Sharing (OpenSharing)
 
 Share `share_superstore_golden` (tablas `kpi_mensual` y `rentabilidad_subcategoria`, con historial) para el destinatario `rcp_socio_comercial` (open sharing). Ver `delta-sharing/01_Delta_Sharing.py`.
 
 ![Delta Sharing](evidencias/27_delta_sharing.png)
+
+![Destinatario](evidencias/27b_delta_sharing_recipient.png)
 
 ---
 
@@ -256,19 +267,25 @@ Si un pase a producción falla, se ejecuta en orden:
 | 24 | [Grants prod](evidencias/24_grants_prod.png) | Permisos aplicados por la tarea `Grants` |
 | 25 | [Key Vault](evidencias/25_key_vault.png) | Secretos de conexión a Azure SQL (sin valores) |
 | 26 | [Azure SQL](evidencias/26_azure_sql.png) | Tablas golden exportadas a `dbo` |
-| 27 | [Delta Sharing](evidencias/27_delta_sharing.png) | Share y destinatario abierto |
+| 27 | [Delta Sharing · share](evidencias/27_delta_sharing.png) | `share_superstore_golden` con 2 tablas e historial |
+| 27b | [Delta Sharing · destinatario](evidencias/27b_delta_sharing_recipient.png) | `rcp_socio_comercial` (open sharing, token) pendiente de activación |
+| — | [Dashboard compartido](dashboard/superstore_sharing.png) | AI/BI Dashboard compartido con `grp_consumidores_bi` (*Can View*) |
 
 ---
 
 ## 15. Certificaciones
 
-| Acreditación (Databricks Academy) | Evidencia |
-|---|---|
-| Databricks Fundamentals | `TODO` |
-| Generative AI Fundamentals | `TODO` |
-| Data Governance Fundamentals | `TODO` |
+Las 3 acreditaciones solicitadas en el curso, emitidas por Databricks Academy. Wallet público: [credentials.databricks.com/profile/renzovalencia872273/wallet](https://credentials.databricks.com/profile/renzovalencia872273/wallet)
 
-Capturas y enlaces de verificación en [`certificaciones/`](certificaciones/).
+| Acreditación (Databricks Academy) | Certificado | Verificación |
+|---|---|---|
+| Databricks Fundamentals | [PDF](certificaciones/01_databricks_fundamentals.pdf) | [credencial](https://credentials.databricks.com/3e61d932-b074-4303-bf42-9f5fc860a390) |
+| Generative AI Fundamentals | [PDF](certificaciones/02_generative_ai_fundamentals.pdf) | [credencial](https://credentials.databricks.com/77a6cf52-dfb0-497c-ad15-d6b5ec03f86c) |
+| Data Governance Fundamentals | [PDF](certificaciones/03_data_governance_fundamentals.pdf) | [credencial](https://credentials.databricks.com/bf04e033-ba18-4686-a164-6185118f4159) |
+
+**Adicionales (Knowledge Badges):** DevOps Essentials for Data Engineering · Build Data Pipelines with Lakeflow Spark Declarative Pipelines · Data Ingestion with Lakeflow Connect · Deploy Workloads with Lakeflow Jobs.
+
+![Wallet de credenciales](certificaciones/00_wallet_databricks.png)
 
 ---
 
@@ -279,6 +296,8 @@ Capturas y enlaces de verificación en [`certificaciones/`](certificaciones/).
 3. Subir `datasets/` a `raw/superstore/{orders,returns,people}/`.
 4. En dev: clonar el repo como Git folder y ejecutar `proceso/1_…` a `6_…` con `env=dev`.
 5. En prod: crear el clúster `cluster_prod_superstore`, configurar los 4 secrets en GitHub y hacer merge `construccion → main`.
+6. *(Opcional)* Crear Azure SQL Database + Key Vault con los secretos `sql-server`, `sql-database`, `sql-user` y `sql-password`, y el secret scope `kv-superstore` en prod. Volver a ejecutar el workflow para exportar Golden.
+7. *(Opcional)* Ejecutar `delta-sharing/01_Delta_Sharing.py` en prod e importar `dashboard/superstore_ejecutivo.lvdash.json` como AI/BI Dashboard.
 
 ---
-<sub>Fuente de datos: dataset Superstore (Kaggle). Elaboración propia. Proyecto académico: datos ficticios, sin información confidencial.</sub>
+<sub>Fuente de datos: dataset Sample – Superstore (Tableau; versión pública también en Kaggle). Elaboración propia. Proyecto académico: datos ficticios, sin información confidencial.</sub>

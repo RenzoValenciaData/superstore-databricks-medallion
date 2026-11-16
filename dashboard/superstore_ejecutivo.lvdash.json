@@ -1,0 +1,1066 @@
+{
+  "datasets": [
+    {
+      "name": "f4947c89",
+      "displayName": "ds_kpis",
+      "queryLines": [
+        "SELECT\r\n",
+        "  ROUND(SUM(ventas), 0)                                                    AS ventas,\r\n",
+        "  ROUND(SUM(utilidad), 0)                                                  AS utilidad,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)                                    AS margen,\r\n",
+        "  COUNT(DISTINCT id_orden)                                                 AS ordenes,\r\n",
+        "  ROUND(COUNT(DISTINCT CASE WHEN devuelto THEN id_orden END)\r\n",
+        "        / COUNT(DISTINCT id_orden), 4)                                     AS tasa_devolucion,\r\n",
+        "  ROUND(SUM(monto_descuento), 0)                                           AS monto_descuento\r\n",
+        "FROM superstore_prod.silver.ventas_detalle"
+      ]
+    },
+    {
+      "name": "02757db5",
+      "displayName": "ds_mensual",
+      "queryLines": [
+        "SELECT\r\n",
+        "  anio_mes,\r\n",
+        "  ROUND(SUM(ventas), 2)                         AS ventas,\r\n",
+        "  ROUND(SUM(utilidad), 2)                       AS utilidad,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)         AS margen\r\n",
+        "FROM superstore_prod.golden.kpi_mensual\r\n",
+        "GROUP BY anio_mes\r\n",
+        "ORDER BY anio_mes"
+      ]
+    },
+    {
+      "name": "a0663f4a",
+      "displayName": "ds_anual",
+      "queryLines": [
+        "SELECT\r\n",
+        "  anio,\r\n",
+        "  ROUND(SUM(ventas), 0)                         AS ventas,\r\n",
+        "  ROUND(SUM(utilidad), 0)                       AS utilidad,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)         AS margen\r\n",
+        "FROM superstore_prod.golden.kpi_mensual\r\n",
+        "GROUP BY anio\r\n",
+        "ORDER BY anio"
+      ]
+    },
+    {
+      "name": "ef3d93d1",
+      "displayName": "ds_region",
+      "queryLines": [
+        "SELECT\r\n",
+        "  region,\r\n",
+        "  ROUND(SUM(ventas), 0)                         AS ventas,\r\n",
+        "  ROUND(SUM(utilidad), 0)                       AS utilidad,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)         AS margen\r\n",
+        "FROM superstore_prod.golden.kpi_mensual\r\n",
+        "GROUP BY region\r\n",
+        "ORDER BY margen DESC"
+      ]
+    },
+    {
+      "name": "648a2d14",
+      "displayName": "ds_subcategoria",
+      "queryLines": [
+        "SELECT\r\n",
+        "  categoria,\r\n",
+        "  subcategoria,\r\n",
+        "  ROUND(SUM(ventas), 0)                         AS ventas,\r\n",
+        "  ROUND(SUM(utilidad), 0)                       AS utilidad,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)         AS margen,\r\n",
+        "  ROUND(SUM(monto_descuento), 0)                AS monto_descuento\r\n",
+        "  , CASE WHEN SUM(utilidad) < 0 THEN 'Pérdida' ELSE 'Ganancia' END AS resultado\r\n",
+        "FROM superstore_prod.golden.rentabilidad_subcategoria\r\n",
+        "GROUP BY categoria, subcategoria\r\n",
+        "ORDER BY utilidad ASC"
+      ]
+    },
+    {
+      "name": "f3dc2a5f",
+      "displayName": "ds_descuento",
+      "queryLines": [
+        "SELECT\r\n",
+        "  banda_descuento,\r\n",
+        "  COUNT(*)                                      AS lineas,\r\n",
+        "  ROUND(SUM(ventas), 0)                         AS ventas,\r\n",
+        "  ROUND(SUM(utilidad), 0)                       AS utilidad,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)         AS margen\r\n",
+        "  , CASE WHEN SUM(utilidad) < 0 THEN 'Pérdida' ELSE 'Ganancia' END AS resultado\r\n",
+        "FROM superstore_prod.silver.ventas_detalle\r\n",
+        "GROUP BY banda_descuento\r\n",
+        "ORDER BY utilidad DESC"
+      ]
+    },
+    {
+      "name": "70a27cda",
+      "displayName": "ds_clientes_abc",
+      "queryLines": [
+        "SELECT\r\n",
+        "  clase_abc,\r\n",
+        "  COUNT(*)                                      AS clientes,\r\n",
+        "  ROUND(SUM(ventas), 0)                         AS ventas,\r\n",
+        "  ROUND(SUM(ventas) / SUM(SUM(ventas)) OVER (), 4) AS participacion\r\n",
+        "FROM superstore_prod.golden.clientes_pareto\r\n",
+        "GROUP BY clase_abc\r\n",
+        "ORDER BY clase_abc"
+      ]
+    },
+    {
+      "name": "2117a661",
+      "displayName": "ds_envios",
+      "queryLines": [
+        "SELECT\r\n",
+        "  modo_envio,\r\n",
+        "  SUM(ordenes)                                  AS ordenes,\r\n",
+        "  ROUND(SUM(dias_envio_prom * ordenes) / SUM(ordenes), 2) AS dias_envio_prom,\r\n",
+        "  MAX(dias_envio_p90)                           AS dias_envio_p90,\r\n",
+        "  ROUND(SUM(utilidad) / SUM(ventas), 4)         AS margen\r\n",
+        "FROM superstore_prod.golden.desempeno_envios\r\n",
+        "GROUP BY modo_envio\r\n",
+        "ORDER BY dias_envio_prom"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "8e25249c",
+      "displayName": "Rentabilidad",
+      "layout": [
+        {
+          "widget": {
+            "name": "8ab14029",
+            "spec": {
+              "widgetType": "text",
+              "version": 1,
+              "encodings": {
+                "text": {
+                  "lines": [
+                    "# Superstore · Rentabilidad 2018–2021\n",
+                    "\n",
+                    "Las ventas crecen 20–30 % al año, pero los descuentos mayores al 20 % destruyen US$135 mil de utilidad (47 % del total)"
+                  ],
+                  "fields": []
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 11,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ventas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f4947c89",
+                  "fields": [
+                    {
+                      "name": "sum(ventas)",
+                      "expression": "SUM(`ventas`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Ventas",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(ventas)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "utilidad",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f4947c89",
+                  "fields": [
+                    {
+                      "name": "sum(utilidad)",
+                      "expression": "SUM(`utilidad`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Utilidad",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(utilidad)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "margen",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f4947c89",
+                  "fields": [
+                    {
+                      "name": "sum(margen)",
+                      "expression": "SUM(`margen`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Margen",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(margen)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ordenes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f4947c89",
+                  "fields": [
+                    {
+                      "name": "sum(ordenes)",
+                      "expression": "SUM(`ordenes`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Órdenes",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(ordenes)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "none",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "tasa-devolucion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f4947c89",
+                  "fields": [
+                    {
+                      "name": "sum(tasa_devolucion)",
+                      "expression": "SUM(`tasa_devolucion`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Tasa Devolución",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(tasa_devolucion)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ventas-utilidad-mensual-tendencia-creciente-estacionalidad-fi",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "02757db5",
+                  "fields": [
+                    {
+                      "name": "monthly(anio_mes)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `anio_mes`)"
+                    },
+                    {
+                      "name": "sum(ventas)",
+                      "expression": "SUM(`ventas`)"
+                    },
+                    {
+                      "name": "sum(utilidad)",
+                      "expression": "SUM(`utilidad`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Ventas y utilidad mensual: tendencia creciente con estacionalidad de fin de año",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  null,
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  }
+                ],
+                "linePatterns": [
+                  null,
+                  "dashed"
+                ],
+                "lineShape": "linear"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(anio_mes)",
+                  "axis": {
+                    "hideTitle": true,
+                    "hideLabels": false,
+                    "hideGrid": false
+                  },
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "sum(ventas)",
+                      "displayName": "Ventas"
+                    },
+                    {
+                      "fieldName": "sum(utilidad)",
+                      "displayName": "Utilidad"
+                    }
+                  ],
+                  "axis": {
+                    "hideTitle": true
+                  }
+                },
+                "color": {
+                  "legend": {
+                    "hide": false,
+                    "position": "right",
+                    "hideTitle": true
+                  }
+                },
+                "label": {
+                  "show": false
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "descuentos-mayores-20-generan-perdidas-us135-mil",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f3dc2a5f",
+                  "fields": [
+                    {
+                      "name": "resultado",
+                      "expression": "`resultado`"
+                    },
+                    {
+                      "name": "sum(utilidad)",
+                      "expression": "SUM(`utilidad`)"
+                    },
+                    {
+                      "name": "banda_descuento",
+                      "expression": "`banda_descuento`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Descuentos mayores al 20 % generan pérdidas de US$135 mil",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  }
+                ],
+                "linePatterns": [
+                  "dashed"
+                ],
+                "lineShape": "linear"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(utilidad)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    },
+                    "hideGroupSeparator": true,
+                    "negativeSign": "standard"
+                  },
+                  "displayName": "Utilidad",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "banda_descuento",
+                  "axis": {
+                    "title": "Tipo Dscto"
+                  },
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Alto (más de 40%)",
+                        "Medio (21% a 40%)",
+                        "Bajo (hasta 20%)",
+                        "Sin descuento"
+                      ]
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "resultado",
+                  "legend": {
+                    "hide": true
+                  },
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Ganancia",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 7
+                        }
+                      },
+                      {
+                        "value": "Pérdida",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 8
+                        }
+                      }
+                    ]
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "central-menor-margen-7-9-vs-14-9-west",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ef3d93d1",
+                  "fields": [
+                    {
+                      "name": "region",
+                      "expression": "`region`"
+                    },
+                    {
+                      "name": "sum(margen)",
+                      "expression": "SUM(`margen`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Central tiene el menor margen (7.9 % vs 14.9 % en West)",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  }
+                ],
+                "linePatterns": [
+                  "dashed"
+                ],
+                "lineShape": "linear"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "region",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(margen)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  },
+                  "axis": {
+                    "title": "Margen"
+                  },
+                  "displayName": "Utilidad",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "las-ventas-crecen-29-en-2020-y-20-en-2021",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "a0663f4a",
+                  "fields": [
+                    {
+                      "name": "anio",
+                      "expression": "`anio`"
+                    },
+                    {
+                      "name": "sum(ventas)",
+                      "expression": "SUM(`ventas`)"
+                    },
+                    {
+                      "name": "sum(anio)",
+                      "expression": "SUM(`anio`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "ASC",
+                      "expression": "SUM(`anio`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Las ventas crecen +29 % en 2020 y +20 % en 2021",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  }
+                ],
+                "linePatterns": [
+                  "dashed"
+                ],
+                "lineShape": "linear"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "anio",
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "measure",
+                      "measure": {
+                        "fieldName": "sum(anio)"
+                      }
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(ventas)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    }
+                  },
+                  "axis": {
+                    "title": "Ventas"
+                  },
+                  "displayName": "Utilidad",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 5,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "tables-bookcases-supplies-deficitarias",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "648a2d14",
+                  "fields": [
+                    {
+                      "name": "resultado",
+                      "expression": "`resultado`"
+                    },
+                    {
+                      "name": "sum(utilidad)",
+                      "expression": "SUM(`utilidad`)"
+                    },
+                    {
+                      "name": "subcategoria",
+                      "expression": "`subcategoria`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Tables, Bookcases y Supplies son deficitarias",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  }
+                ],
+                "linePatterns": [
+                  "dashed"
+                ],
+                "lineShape": "linear"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(utilidad)",
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    },
+                    "significantFigures": {
+                      "type": "all"
+                    },
+                    "negativeSign": "standard"
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "y": {
+                  "fieldName": "subcategoria",
+                  "axis": {
+                    "title": "Subcategoría"
+                  },
+                  "displayName": "Utilidad",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "type": "number-of-categories",
+                      "number": 6
+                    },
+                    "sort": {
+                      "by": "x"
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "resultado",
+                  "legend": {
+                    "hide": true
+                  },
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Pérdida",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 8
+                        }
+                      },
+                      {
+                        "value": "Ganancia",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 7
+                        }
+                      }
+                    ]
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 8,
+            "width": 5,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "395-clientes-clase-a-explican-80-porciento-ventas",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "70a27cda",
+                  "fields": [
+                    {
+                      "name": "clase_abc",
+                      "expression": "`clase_abc`"
+                    },
+                    {
+                      "name": "clientes",
+                      "expression": "`clientes`"
+                    },
+                    {
+                      "name": "ventas",
+                      "expression": "`ventas`"
+                    },
+                    {
+                      "name": "participacion",
+                      "expression": "`participacion`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "395 clientes (clase A) explican el 80 % de las ventas",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "clase_abc"
+                  },
+                  {
+                    "fieldName": "clientes"
+                  },
+                  {
+                    "fieldName": "ventas",
+                    "format": {
+                      "type": "number-currency",
+                      "currencyCode": "USD",
+                      "abbreviation": "none",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      },
+                      "significantFigures": {
+                        "type": "all"
+                      },
+                      "hideGroupSeparator": false
+                    }
+                  },
+                  {
+                    "fieldName": "participacion",
+                    "format": {
+                      "type": "number-percent",
+                      "decimalPlaces": {
+                        "type": "exact",
+                        "places": 0
+                      },
+                      "hideGroupSeparator": true
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 5,
+            "height": 4
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
