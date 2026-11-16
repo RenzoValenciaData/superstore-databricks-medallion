@@ -1,0 +1,13 @@
+Credenciales Databricks Academy - Renzo Valencia
+
+Wallet publico (7 credenciales):
+https://credentials.databricks.com/profile/renzovalencia872273/wallet
+
+Databricks Fundamentals:
+https://credentials.databricks.com/3e61d932-b074-4303-bf42-9f5fc860a390
+
+Generative AI Fundamentals:
+https://credentials.databricks.com/77a6cf52-dfb0-497c-ad15-d6b5ec03f86c
+
+Data Governance Fundamentals:
+https://credentials.databricks.com/bf04e033-ba18-4686-a164-6185118f4159
